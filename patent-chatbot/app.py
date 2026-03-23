@@ -67,6 +67,46 @@ def agent_google_patents_search(keywords, country=None, max_results=10):
     return _dedupe(results, max_results)
 
 
+def _download_patent_pdf(patent_number):
+    """Download patent PDF from Google Patents and save locally. Returns local URL or None."""
+    import os
+    clean = patent_number.strip().replace(" ", "").replace(",", "")
+    pdf_dir = os.path.join(os.path.dirname(__file__), "static", "pdfs")
+    os.makedirs(pdf_dir, exist_ok=True)
+    local_path = os.path.join(pdf_dir, f"{clean}.pdf")
+
+    # If already downloaded, return immediately
+    if os.path.exists(local_path) and os.path.getsize(local_path) > 1000:
+        return f"/static/pdfs/{clean}.pdf"
+
+    try:
+        # Step 1: Get the /pdf page which contains the real PDF URL
+        pdf_page_url = f"https://patents.google.com/patent/{clean}/pdf"
+        resp = httpx.get(pdf_page_url, headers=HEADERS, follow_redirects=True, timeout=20)
+        if resp.status_code != 200:
+            return None
+
+        # Step 2: Extract real PDF URL from patentimages.storage.googleapis.com
+        pdf_url = None
+        m = re.search(r'(https://patentimages\.storage\.googleapis\.com/[^\s"\']+\.pdf)', resp.text)
+        if m:
+            pdf_url = m.group(1)
+
+        if not pdf_url:
+            return None
+
+        # Step 3: Download the actual PDF
+        pdf_resp = httpx.get(pdf_url, headers=HEADERS, follow_redirects=True, timeout=30)
+        if pdf_resp.status_code == 200 and pdf_resp.content[:5] == b"%PDF-":
+            with open(local_path, "wb") as f:
+                f.write(pdf_resp.content)
+            return f"/static/pdfs/{clean}.pdf"
+
+    except Exception as e:
+        print(f"PDF download failed for {patent_number}: {e}")
+    return None
+
+
 def agent_fetch_patent_detail(patent_number):
     """Fetch detailed patent info from Google Patents by scraping."""
     detail = {"patent_number": patent_number, "source": "Google Patents"}
@@ -101,6 +141,11 @@ def agent_fetch_patent_detail(patent_number):
                 detail["first_claim"] = claims[0].get_text(strip=True)[:600]
 
             detail["url"] = url
+
+            # Download PDF
+            pdf_local = _download_patent_pdf(patent_number)
+            if pdf_local:
+                detail["pdf_local_url"] = pdf_local
         else:
             detail["error"] = f"HTTP {resp.status_code}"
     except Exception as e:
@@ -233,6 +278,7 @@ Fetch complete info for a specific patent number.
 3. **Only use get_patent_detail when explicitly asked** - Do NOT auto-fetch details for every result
 4. **Respond in user's language** - Match the user's conversation language
 5. **MANDATORY: Every patent number MUST be a clickable link** - Format: `[CN103597579B](https://patents.google.com/patent/CN103597579B/zh)`. Never show a patent number as plain text.
+6. **PDF download links** - If the search result or patent detail contains a `pdf_local_url` field, add a PDF download link: `[📥 下載PDF](pdf_local_url)`. Always show it next to the patent number.
 6. **Structured output** - Use Markdown tables, lists, headers
 7. **Be concise** - Summarize results directly, don't over-explain
 
@@ -246,12 +292,13 @@ After searching, structure your response EXACTLY like this:
 
 ### 專利結果表格
 
-| 專利號 | 標題 | 申請人 | 技術領域 |
-|--------|------|--------|---------|
-| [US12345678B2](https://patents.google.com/patent/US12345678B2/zh) | Title here | Applicant | IPC |
-| [CN112233445A](https://patents.google.com/patent/CN112233445A/zh) | Title here | Applicant | IPC |
+| 專利號 | 標題 | 申請人 | PDF |
+|--------|------|--------|-----|
+| [US12345678B2](https://patents.google.com/patent/US12345678B2/zh) | Title here | Applicant | [📥 PDF](/static/pdfs/US12345678B2.pdf) |
+| [CN112233445A](https://patents.google.com/patent/CN112233445A/zh) | Title here | Applicant | [📥 PDF](/static/pdfs/CN112233445A.pdf) |
 
 IMPORTANT: The patent number column MUST contain a Markdown hyperlink to Google Patents. The URL format is: https://patents.google.com/patent/{PATENT_NUMBER}/zh (remove all commas and spaces from the patent number in the URL).
+IMPORTANT: If the tool result contains a `pdf_local_url` field, use that exact URL for the PDF download link. If no `pdf_local_url` is available, still provide a PDF link in the format `/static/pdfs/{PATENT_NUMBER}.pdf` — the server will attempt to download it on demand.
 
 ### 關鍵發現分析
 ...
@@ -268,6 +315,26 @@ IMPORTANT: The patent number column MUST contain a Markdown hyperlink to Google 
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
+
+
+@app.route("/api/patent-pdf/<patent_number>")
+def api_patent_pdf(patent_number):
+    """On-demand PDF download. If the PDF doesn't exist locally, download it from Google Patents."""
+    import os
+    clean = patent_number.strip().replace(" ", "").replace(",", "")
+    pdf_dir = os.path.join(os.path.dirname(__file__), "static", "pdfs")
+    local_path = os.path.join(pdf_dir, f"{clean}.pdf")
+
+    # If already exists, serve it
+    if os.path.exists(local_path) and os.path.getsize(local_path) > 1000:
+        return send_from_directory(pdf_dir, f"{clean}.pdf", mimetype="application/pdf")
+
+    # Try to download
+    pdf_local = _download_patent_pdf(patent_number)
+    if pdf_local and os.path.exists(local_path):
+        return send_from_directory(pdf_dir, f"{clean}.pdf", mimetype="application/pdf")
+
+    return {"error": f"PDF not available for {patent_number}"}, 404
 
 
 @app.route("/api/chat", methods=["POST"])
