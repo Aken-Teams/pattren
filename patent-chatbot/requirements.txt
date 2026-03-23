@@ -1,0 +1,8 @@
+flask
+flask-cors
+openai
+requests
+httpx
+beautifulsoup4
+duckduckgo-search
+pypatent
