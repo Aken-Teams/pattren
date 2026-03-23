@@ -2414,17 +2414,28 @@ async function executeSearch() {
   isStreaming = true;
   const resultsList = document.getElementById('search-results-list');
   resultsList.innerHTML = `
-    <div style="display: flex; flex-direction: column; align-items: center; padding: 60px 20px; gap: 16px;">
-      <div style="display: flex; gap: 6px;">
-        <span style="width: 8px; height: 8px; background: var(--cyan); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out;"></span>
-        <span style="width: 8px; height: 8px; background: var(--cyan); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out 0.2s;"></span>
-        <span style="width: 8px; height: 8px; background: var(--cyan); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out 0.4s;"></span>
+    <div id="search-status" style="display: flex; flex-direction: column; gap: 8px; padding: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="display: flex; gap: 4px;">
+          <span style="width: 6px; height: 6px; background: var(--cyan); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out;"></span>
+          <span style="width: 6px; height: 6px; background: var(--cyan); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out 0.2s;"></span>
+          <span style="width: 6px; height: 6px; background: var(--cyan); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out 0.4s;"></span>
+        </div>
+        <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">AI 正在搜尋全球專利資料庫...</span>
       </div>
-      <span style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);">AI 正在搜尋全球專利資料庫...</span>
     </div>
+    <div id="search-ai-result" style="display: none;"></div>
   `;
 
+  const statusEl = document.getElementById('search-status');
+  const aiResultEl = document.getElementById('search-ai-result');
   conversationHistory = [{ role: 'user', content: query }];
+
+  // Status message patterns from backend tool calls
+  const statusPatterns = [/^\[Agent\]/, /^\[PQAI/, /^\[pypatent\]/, /^\[Google Patents\]/, /^>> Found/];
+  function isStatusMessage(text) {
+    return statusPatterns.some(p => p.test(text.trim()));
+  }
 
   try {
     const response = await fetch('/api/chat', {
@@ -2435,10 +2446,12 @@ async function executeSearch() {
 
     if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
-    let fullContent = '';
+    let finalContent = '';
+    let statusContent = '';
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let hasFinalContent = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -2453,23 +2466,60 @@ async function executeSearch() {
         if (payload === '[DONE]') continue;
         try {
           const parsed = JSON.parse(payload);
-          if (parsed.content) fullContent += parsed.content;
+          if (parsed.error) {
+            aiResultEl.style.display = 'block';
+            aiResultEl.innerHTML = `<div style="padding: 20px; color: var(--error);">⚠️ ${parsed.error}</div>`;
+            continue;
+          }
+          if (parsed.content) {
+            if (isStatusMessage(parsed.content)) {
+              // Show status messages in the status area
+              statusContent += parsed.content;
+              const statusLines = statusContent.trim().split('\n').filter(l => l.trim());
+              statusEl.innerHTML = statusLines.map(l => {
+                const text = l.trim();
+                let icon = '⚡';
+                if (text.startsWith('[Agent]')) icon = '🔍';
+                else if (text.startsWith('[PQAI')) icon = '🤖';
+                else if (text.startsWith('[pypatent]')) icon = '📋';
+                else if (text.startsWith('[Google')) icon = '🌐';
+                else if (text.startsWith('>> Found')) icon = '✅';
+                return `<div style="display: flex; align-items: center; gap: 8px; padding: 4px 0;">
+                  <span style="font-size: 12px;">${icon}</span>
+                  <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">${text.replace(/^\[|\]$/g, '')}</span>
+                </div>`;
+              }).join('');
+            } else {
+              // Final AI content - stream it
+              if (!hasFinalContent) {
+                hasFinalContent = true;
+                aiResultEl.style.display = 'block';
+                // Collapse status area
+                statusEl.style.borderBottom = '1px solid var(--bg-card-inner)';
+                statusEl.style.paddingBottom = '12px';
+                statusEl.style.marginBottom = '8px';
+              }
+              finalContent += parsed.content;
+              aiResultEl.innerHTML = `
+                <div class="search-result-card" style="border: none; cursor: default;">
+                  <div style="font-size: 14px; color: var(--text-secondary); line-height: 1.8;">
+                    ${renderMarkdown(finalContent)}
+                  </div>
+                </div>
+              `;
+              // Auto-scroll the search center panel
+              const centerPanel = document.querySelector('.search-center');
+              if (centerPanel) centerPanel.scrollTop = centerPanel.scrollHeight;
+            }
+          }
         } catch {}
       }
     }
 
-    // Render the AI response as formatted results
-    if (fullContent) {
-      conversationHistory.push({ role: 'assistant', content: fullContent });
-      resultsList.innerHTML = `
-        <div class="search-result-card" style="border: none; cursor: default;">
-          <div style="font-size: 14px; color: var(--text-secondary); line-height: 1.8;">
-            ${renderMarkdown(fullContent)}
-          </div>
-        </div>
-      `;
-      // Apply syntax highlighting
-      resultsList.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+    // Final render with syntax highlighting
+    if (finalContent) {
+      conversationHistory.push({ role: 'assistant', content: finalContent });
+      aiResultEl.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
     }
   } catch (err) {
     resultsList.innerHTML = `
