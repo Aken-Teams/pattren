@@ -320,11 +320,17 @@ def chat():
                             "content": result_str
                         })
 
-                        # Result count status
+                        # Result count status + save to DB
                         total = result.get("total_found", 0)
                         if total:
                             s2 = f">> Found {total} results\n\n"
                             yield f"data: {json.dumps({'content': s2}, ensure_ascii=False)}\n\n"
+                            try:
+                                query_text = args.get("keywords", "") or args.get("patent_number", "")
+                                database.save_search(None, query_text, total, result.get("results", [])[:5])
+                                database.log_activity(None, "search", f"搜尋完成: {query_text}", f"找到 {total} 筆結果")
+                            except Exception:
+                                pass
 
                     # Before second round, instruct AI to summarize (not call tools)
                     current_messages.append({
@@ -401,6 +407,144 @@ def _tool_status_message(fn, args):
         pn = args.get("patent_number", "")
         return f"[Google Patents] Fetching detail: {pn}\n\n"
     return f"[Agent] {fn}...\n\n"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Database API Routes
+# ═══════════════════════════════════════════════════════════════════════════
+
+import db as database
+from datetime import datetime, date
+from decimal import Decimal
+
+def _serialize(obj):
+    """JSON serializer for DB objects."""
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
+    return str(obj)
+
+
+@app.route("/api/dashboard/stats")
+def api_dashboard_stats():
+    try:
+        stats = database.get_dashboard_stats()
+        return json.dumps(stats, default=_serialize)
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/projects", methods=["GET"])
+def api_projects():
+    try:
+        status = request.args.get("status")
+        projects = database.get_projects(status=status)
+        return json.dumps(projects, default=_serialize, ensure_ascii=False)
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/projects", methods=["POST"])
+def api_create_project():
+    try:
+        data = request.json
+        pid = database.create_project(data["name"], data.get("description", ""), data.get("owner_id"))
+        database.log_activity(data.get("owner_id"), "project_update", f"新專案建立: {data['name']}")
+        return {"id": pid}
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/projects/<int:pid>", methods=["GET"])
+def api_project_detail(pid):
+    try:
+        project = database.get_project(pid)
+        if not project:
+            return {"error": "Not found"}, 404
+        return json.dumps(project, default=_serialize, ensure_ascii=False)
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/projects/<int:pid>", methods=["PUT"])
+def api_update_project(pid):
+    try:
+        data = request.json
+        database.update_project(pid, **data)
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/patents", methods=["GET"])
+def api_patents():
+    try:
+        project_id = request.args.get("project_id", type=int)
+        patents = database.get_patents(project_id=project_id)
+        return json.dumps(patents, default=_serialize, ensure_ascii=False)
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/patents", methods=["POST"])
+def api_save_patent():
+    try:
+        data = request.json
+        pid = database.save_patent(data, data.get("project_id"))
+        return {"id": pid}
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/search-history", methods=["GET"])
+def api_search_history():
+    try:
+        history = database.get_search_history()
+        return json.dumps(history, default=_serialize, ensure_ascii=False)
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/activity", methods=["GET"])
+def api_activity():
+    try:
+        logs = database.get_activity_log()
+        return json.dumps(logs, default=_serialize, ensure_ascii=False)
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/drafts", methods=["GET"])
+def api_drafts():
+    try:
+        drafts = database.get_drafts()
+        return json.dumps(drafts, default=_serialize, ensure_ascii=False)
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/drafts", methods=["POST"])
+def api_save_draft():
+    try:
+        data = request.json
+        did = database.save_draft(
+            data.get("user_id"), data["title"], data.get("tech_field", ""),
+            data.get("core_description", ""), data.get("prior_art_issues", ""),
+            data.get("reference_patents", ""), data.get("generated_content", "")
+        )
+        return {"id": did}
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/users", methods=["GET"])
+def api_users():
+    try:
+        users = database.get_users()
+        return json.dumps(users, default=_serialize, ensure_ascii=False)
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 
 if __name__ == "__main__":

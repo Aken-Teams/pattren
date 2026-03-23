@@ -5,4 +5,4 @@ requests
 httpx
 beautifulsoup4
 duckduckgo-search
-pypatent
+pymysql
