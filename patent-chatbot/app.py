@@ -232,18 +232,32 @@ Fetch complete info for a specific patent number.
 2. **Multi-language keywords** - Translate user's keywords to English for `keywords_en`
 3. **Only use get_patent_detail when explicitly asked** - Do NOT auto-fetch details for every result
 4. **Respond in user's language** - Match the user's conversation language
-5. **Include links** - Add Google Patents links: `https://patents.google.com/patent/{PN}/zh`
+5. **MANDATORY: Every patent number MUST be a clickable link** - Format: `[CN103597579B](https://patents.google.com/patent/CN103597579B/zh)`. Never show a patent number as plain text.
 6. **Structured output** - Use Markdown tables, lists, headers
 7. **Be concise** - Summarize results directly, don't over-explain
 
 ## Response Template
 
-After searching, structure your response like this:
+After searching, structure your response EXACTLY like this:
 
-1. Search summary (keywords used, total results)
-2. Results table (patent number, title, applicant, relevance)
-3. Key findings analysis
-4. Extended search links for manual searching
+### 搜索摘要
+- 搜索關鍵詞: ...
+- 總結果數: X項專利
+
+### 專利結果表格
+
+| 專利號 | 標題 | 申請人 | 技術領域 |
+|--------|------|--------|---------|
+| [US12345678B2](https://patents.google.com/patent/US12345678B2/zh) | Title here | Applicant | IPC |
+| [CN112233445A](https://patents.google.com/patent/CN112233445A/zh) | Title here | Applicant | IPC |
+
+IMPORTANT: The patent number column MUST contain a Markdown hyperlink to Google Patents. The URL format is: https://patents.google.com/patent/{PATENT_NUMBER}/zh (remove all commas and spaces from the patent number in the URL).
+
+### 關鍵發現分析
+...
+
+### 擴展搜索建議
+...
 """
 
 
