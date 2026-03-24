@@ -1042,6 +1042,30 @@ html, body {
   height: 100%;
 }
 
+.da-input-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.da-input-row input {
+  flex: 1;
+  background: var(--bg-card-inner);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: var(--text-white);
+  font-size: 14px;
+  font-family: var(--font-mono);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.da-input-row input:focus { border-color: var(--cyan); }
+
+.da-input-row input::placeholder { color: var(--text-muted); font-family: var(--font-sans); }
+
 .da-header {
   padding: 24px 24px 16px;
   display: flex;
@@ -1956,8 +1980,12 @@ html, body {
       <div class="design-around-page" style="height: calc(100vh - 56px);">
         <div class="da-header">
           <h1>規避設計策略</h1>
-          <div class="da-header-sub">
-            <span>針對專利 US11,421,498 · 產生日期: 2024-03-15</span>
+          <div class="da-input-row">
+            <input id="da-patent-input" type="text" placeholder="輸入專利號碼，例如 US11421498B2、CN103597579B、TW202318762A" />
+            <button id="da-analyze-btn" class="btn-primary" onclick="startDesignAround()">分析</button>
+          </div>
+          <div id="da-header-sub" class="da-header-sub" style="display:none;">
+            <span id="da-patent-label"></span>
           </div>
         </div>
         <div class="da-cols">
@@ -1965,79 +1993,59 @@ html, body {
           <div class="da-col">
             <div class="da-col-header">
               <h3>原始專利請求項</h3>
-              <span class="badge badge-red">4 項需規避</span>
+              <span class="badge badge-red" id="da-claims-badge">等待輸入</span>
             </div>
-            <div class="da-col-body">
-              <div class="da-claim-card">
-                <span class="da-claim-title">請求項 1</span>
-                <span class="da-claim-text">一種基於深度學習的專利分類方法，包含對專利文本進行語義分析的步驟。利用自然語言處理技術對文本結構化分解...</span>
-              </div>
-              <div class="da-claim-card">
-                <span class="da-claim-title">請求項 2</span>
-                <span class="da-claim-text">如請求項 1 所述之方法，其中該語義分析步驟包含利用 Transformer 架構進行特徵提取與分類...</span>
-              </div>
-              <div class="da-claim-card">
-                <span class="da-claim-title">請求項 3</span>
-                <span class="da-claim-text">一種專利分類裝置，包括記憶體、處理器及儲存於記憶體的程式模組...</span>
+            <div class="da-col-body" id="da-claims-body">
+              <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text-muted);">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                <span style="font-size:13px;">輸入專利號碼後顯示請求項</span>
               </div>
             </div>
             <div class="da-col-footer">
-              <span style="font-size: 12px; color: var(--text-muted);">共 8 項請求項</span>
+              <span id="da-claims-footer" style="font-size: 12px; color: var(--text-muted);"></span>
             </div>
           </div>
 
           <!-- Center: AI Strategies -->
-          <div class="da-col">
+          <div class="da-col" style="flex:1.5;">
             <div class="da-col-header">
               <h3>AI 規避策略</h3>
-              <span class="badge badge-cyan">3 套方案</span>
+              <span class="badge badge-cyan" id="da-strategies-badge">等待分析</span>
             </div>
-            <div class="da-col-body">
-              <div class="da-strategy-card">
-                <span class="da-strategy-title">💡 架構替換策略</span>
-                <span class="da-strategy-text">將原始的 Transformer 架構替換為自定義的混合注意力機制，結合 CNN 局部特徵提取與全局注意力的融合方案。</span>
+            <div class="da-col-body search-result-card" id="da-strategies-body" style="cursor:default;">
+              <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text-muted);">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span style="font-size:13px;">AI 將分析請求項並生成規避策略</span>
               </div>
-              <div class="da-strategy-card">
-                <span class="da-strategy-title">🔄 功能模組替代</span>
-                <span class="da-strategy-text">將知識圖譜更新模組替換為基於圖神經網路的動態更新機制，避免直接使用原專利的知識表示方法。</span>
-              </div>
-              <div class="da-strategy-card">
-                <span class="da-strategy-title">📐 流程重構策略</span>
-                <span class="da-strategy-text">重新設計分類流程的管線架構，採用分階段的漸進式分類策略替代原有的端到端方案。</span>
-              </div>
-            </div>
-            <div class="da-col-footer">
-              <button class="btn-outline">< 預覽</button>
-              <button class="btn-primary">套用方案 →</button>
             </div>
           </div>
 
           <!-- Right: Tracking -->
-          <div class="da-col">
+          <div class="da-col" style="flex:0.7;">
             <div class="da-col-header">
-              <h3>改良設計進度追蹤</h3>
-              <span class="badge badge-green">已完成 2/5</span>
+              <h3>進度追蹤</h3>
+              <span class="badge badge-green" id="da-progress-badge">0/5</span>
             </div>
             <div class="da-col-body">
-              <div class="da-track-item">
-                <span class="da-track-status done"></span>
-                <span style="font-size: 13px; color: var(--text-white); flex: 1;">原始請求項分析</span>
-              </div>
-              <div class="da-track-item">
-                <span class="da-track-status done"></span>
-                <span style="font-size: 13px; color: var(--text-white); flex: 1;">技術特徵拆解完成</span>
-              </div>
-              <div class="da-track-item">
-                <span class="da-track-status in-progress"></span>
-                <span style="font-size: 13px; color: var(--cyan); flex: 1;">替代方案設計中</span>
-              </div>
-              <div class="da-track-item">
+              <div class="da-track-item" id="da-track-1">
                 <span class="da-track-status pending"></span>
-                <span style="font-size: 13px; color: var(--text-muted); flex: 1;">新穎性自我檢核</span>
+                <span class="da-track-label" style="font-size: 13px; color: var(--text-muted); flex: 1;">擷取專利請求項</span>
               </div>
-              <div class="da-track-item">
+              <div class="da-track-item" id="da-track-2">
                 <span class="da-track-status pending"></span>
-                <span style="font-size: 13px; color: var(--text-muted); flex: 1;">規避設計草案產出</span>
+                <span class="da-track-label" style="font-size: 13px; color: var(--text-muted); flex: 1;">技術特徵拆解</span>
+              </div>
+              <div class="da-track-item" id="da-track-3">
+                <span class="da-track-status pending"></span>
+                <span class="da-track-label" style="font-size: 13px; color: var(--text-muted); flex: 1;">AI 規避策略生成</span>
+              </div>
+              <div class="da-track-item" id="da-track-4">
+                <span class="da-track-status pending"></span>
+                <span class="da-track-label" style="font-size: 13px; color: var(--text-muted); flex: 1;">新穎性自我檢核</span>
+              </div>
+              <div class="da-track-item" id="da-track-5">
+                <span class="da-track-status pending"></span>
+                <span class="da-track-label" style="font-size: 13px; color: var(--text-muted); flex: 1;">規避設計草案產出</span>
               </div>
             </div>
           </div>
@@ -2529,6 +2537,158 @@ async function executeSearch() {
     `;
   } finally {
     isStreaming = false;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DESIGN-AROUND FUNCTIONALITY
+   ═══════════════════════════════════════════════════════════ */
+let daRunning = false;
+
+// Enter key on patent input
+document.getElementById('da-patent-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') startDesignAround();
+});
+
+function daUpdateProgress(step, status) {
+  const item = document.getElementById(`da-track-${step}`);
+  if (!item) return;
+  const dot = item.querySelector('.da-track-status');
+  const label = item.querySelector('.da-track-label');
+
+  dot.className = 'da-track-status ' + (status === 'done' ? 'done' : status === 'in-progress' ? 'in-progress' : 'pending');
+  if (status === 'done') {
+    label.style.color = 'var(--text-white)';
+  } else if (status === 'in-progress') {
+    label.style.color = 'var(--cyan)';
+  } else {
+    label.style.color = 'var(--text-muted)';
+  }
+
+  // Update badge count
+  let doneCount = 0;
+  for (let i = 1; i <= 5; i++) {
+    const d = document.querySelector(`#da-track-${i} .da-track-status`);
+    if (d && d.classList.contains('done')) doneCount++;
+  }
+  document.getElementById('da-progress-badge').textContent = `${doneCount}/5`;
+}
+
+function daRenderClaims(data) {
+  const body = document.getElementById('da-claims-body');
+  const badge = document.getElementById('da-claims-badge');
+  const footer = document.getElementById('da-claims-footer');
+
+  if (!data.claims || data.claims.length === 0) {
+    body.innerHTML = '<div style="padding:20px;color:var(--error);text-align:center;">未找到請求項</div>';
+    badge.textContent = '0 項';
+    return;
+  }
+
+  badge.textContent = `${data.claims.length} 項`;
+  footer.textContent = `共 ${data.claims.length} 項請求項`;
+
+  body.innerHTML = data.claims.map(c => `
+    <div class="da-claim-card">
+      <span class="da-claim-title">請求項 ${c.number}</span>
+      <span class="da-claim-text">${c.text.length > 300 ? c.text.slice(0, 300) + '...' : c.text}</span>
+    </div>
+  `).join('');
+}
+
+async function startDesignAround() {
+  const input = document.getElementById('da-patent-input');
+  const patentNumber = input.value.trim();
+  if (!patentNumber || daRunning) return;
+
+  daRunning = true;
+  const btn = document.getElementById('da-analyze-btn');
+  btn.disabled = true;
+  btn.textContent = '分析中...';
+
+  // Reset UI
+  document.getElementById('da-header-sub').style.display = 'flex';
+  document.getElementById('da-patent-label').textContent = `正在分析專利 ${patentNumber} ...`;
+  document.getElementById('da-claims-body').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">載入請求項中...</div>';
+  document.getElementById('da-strategies-body').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">等待 AI 分析...</div>';
+  document.getElementById('da-claims-badge').textContent = '載入中';
+  document.getElementById('da-strategies-badge').textContent = '等待分析';
+
+  // Reset progress
+  for (let i = 1; i <= 5; i++) daUpdateProgress(i, 'pending');
+
+  try {
+    const response = await fetch('/api/design-around', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patent_number: patentNumber })
+    });
+
+    if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let aiContent = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6).trim();
+        if (payload === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(payload);
+
+          if (parsed.type === 'claims') {
+            daRenderClaims(parsed.data);
+            const title = parsed.data.title || patentNumber;
+            document.getElementById('da-patent-label').textContent =
+              `專利 ${patentNumber} · ${title}`;
+          }
+          else if (parsed.type === 'progress') {
+            daUpdateProgress(parsed.step, parsed.status);
+          }
+          else if (parsed.type === 'content') {
+            if (!aiContent) {
+              document.getElementById('da-strategies-badge').textContent = '生成中...';
+            }
+            aiContent += parsed.content;
+            document.getElementById('da-strategies-body').innerHTML =
+              `<div style="font-size:13px;color:var(--text-secondary);line-height:1.8;padding:4px;">
+                ${renderMarkdown(aiContent)}
+              </div>`;
+            // Auto-scroll
+            const body = document.getElementById('da-strategies-body');
+            body.scrollTop = body.scrollHeight;
+          }
+          else if (parsed.type === 'error') {
+            document.getElementById('da-strategies-body').innerHTML =
+              `<div style="padding:20px;color:var(--error);text-align:center;">⚠️ ${parsed.message}</div>`;
+          }
+        } catch {}
+      }
+    }
+
+    // Final state
+    if (aiContent) {
+      document.getElementById('da-strategies-badge').textContent = '分析完成';
+      document.getElementById('da-strategies-body').querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+    }
+
+  } catch (err) {
+    document.getElementById('da-strategies-body').innerHTML =
+      `<div style="padding:20px;color:var(--error);text-align:center;">⚠️ 連線失敗：${err.message}</div>`;
+  } finally {
+    daRunning = false;
+    btn.disabled = false;
+    btn.textContent = '分析';
   }
 }
 

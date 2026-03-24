@@ -107,6 +107,41 @@ def _download_patent_pdf(patent_number):
     return None
 
 
+def _fetch_all_claims(patent_number):
+    """Fetch all claims from Google Patents for design-around analysis."""
+    clean = patent_number.strip().replace(" ", "").replace(",", "")
+    url = f"https://patents.google.com/patent/{clean}/en"
+    result = {"patent_number": clean, "title": "", "abstract": "", "claims": [], "url": url}
+    try:
+        resp = httpx.get(url, headers=HEADERS, follow_redirects=True, timeout=20)
+        if resp.status_code != 200:
+            result["error"] = f"HTTP {resp.status_code}"
+            return result
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        t = soup.select_one("span.title-text, h1#title")
+        if t: result["title"] = t.get_text(strip=True)
+
+        a = soup.select_one("div.abstract, section#abstractSection div.abstract")
+        if a: result["abstract"] = a.get_text(strip=True)[:800]
+
+        for dt in soup.select("dt"):
+            key = dt.get_text(strip=True).lower()
+            dd = dt.find_next_sibling("dd")
+            if not dd: continue
+            val = dd.get_text(strip=True)
+            if "assignee" in key or "applicant" in key: result["applicant"] = val
+
+        claims = soup.select("div.claim")
+        for i, c in enumerate(claims):
+            text = c.get_text(strip=True)
+            if text:
+                result["claims"].append({"number": i + 1, "text": text[:1000]})
+    except Exception as e:
+        result["error"] = str(e)[:200]
+    return result
+
+
 def agent_fetch_patent_detail(patent_number):
     """Fetch detailed patent info from Google Patents by scraping."""
     detail = {"patent_number": patent_number, "source": "Google Patents"}
@@ -379,6 +414,85 @@ def api_patent_pdf(patent_number):
         return send_from_directory(pdf_dir, f"{clean}.pdf", mimetype="application/pdf")
 
     return {"error": f"PDF not available for {patent_number}"}, 404
+
+
+@app.route("/api/design-around", methods=["POST"])
+def api_design_around():
+    """Analyze patent claims and generate design-around strategies via SSE."""
+    data = request.json
+    patent_number = (data or {}).get("patent_number", "").strip()
+    if not patent_number:
+        return {"error": "Missing patent_number"}, 400
+
+    def generate():
+        try:
+            # Step 1: Fetch all claims
+            yield f"data: {json.dumps({'type': 'progress', 'step': 1, 'status': 'in-progress', 'label': '擷取專利請求項...'}, ensure_ascii=False)}\n\n"
+            claims_data = _fetch_all_claims(patent_number)
+            yield f"data: {json.dumps({'type': 'claims', 'data': claims_data}, ensure_ascii=False)}\n\n"
+
+            if claims_data.get("error") or not claims_data["claims"]:
+                yield f"data: {json.dumps({'type': 'error', 'message': claims_data.get('error', '未找到請求項')}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            yield f"data: {json.dumps({'type': 'progress', 'step': 1, 'status': 'done'}, ensure_ascii=False)}\n\n"
+
+            # Step 2: AI analysis
+            yield f"data: {json.dumps({'type': 'progress', 'step': 2, 'status': 'in-progress', 'label': '技術特徵拆解中...'}, ensure_ascii=False)}\n\n"
+
+            claims_text = "\n".join(
+                f"Claim {c['number']}: {c['text']}" for c in claims_data["claims"][:15]
+            )
+
+            system_prompt = f"""You are a patent design-around expert. The user provides patent claims. You must:
+
+1. First, analyze the key technical features of the independent claims (identify which claims are independent vs dependent).
+2. Then propose 3 concrete design-around strategies that avoid infringement while achieving similar functionality.
+3. For each strategy, explain: what to replace/modify, why it avoids the claim, and what the alternative technical approach is.
+
+Patent: {claims_data['patent_number']}
+Title: {claims_data.get('title', 'N/A')}
+
+Respond in the same language as the patent title. If the title is in Chinese, respond in Traditional Chinese. If in English, respond in English.
+Use structured Markdown with headers (### ), bullet points, and bold text for key terms.
+Structure your response as:
+### 請求項分析 (Claim Analysis)
+### 規避策略一: [name]
+### 規避策略二: [name]
+### 規避策略三: [name]
+### 風險評估與建議"""
+
+            yield f"data: {json.dumps({'type': 'progress', 'step': 2, 'status': 'done'}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'status': 'in-progress', 'label': 'AI 生成規避策略...'}, ensure_ascii=False)}\n\n"
+
+            stream = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Please analyze the following patent claims and propose design-around strategies:\n\n{claims_text}"}
+                ],
+                stream=True,
+                temperature=0.7,
+                max_tokens=4096,
+            )
+
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    token = chunk.choices[0].delta.content
+                    yield f"data: {json.dumps({'type': 'content', 'content': token}, ensure_ascii=False)}\n\n"
+
+            yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'status': 'done'}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'progress', 'step': 4, 'status': 'done'}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'progress', 'step': 5, 'status': 'done'}, ensure_ascii=False)}\n\n"
+
+        except Exception as e:
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)[:300]}, ensure_ascii=False)}\n\n"
+
+        yield "data: [DONE]\n\n"
+
+    return Response(generate(), mimetype="text/event-stream")
 
 
 @app.route("/api/chat", methods=["POST"])
