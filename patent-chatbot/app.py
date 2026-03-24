@@ -171,6 +171,26 @@ def _extract_patent_number(text):
     return None
 
 
+def _translate_to_english(text):
+    """Use DeepSeek to translate keywords to English for Google Patents search."""
+    if not text or text.isascii():
+        return text
+    try:
+        resp = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": "You are a translator. Translate the following text to English. Output ONLY the translated text, nothing else."},
+                {"role": "user", "content": text},
+            ],
+            temperature=0,
+            max_tokens=200,
+        )
+        translated = resp.choices[0].message.content.strip()
+        return translated if translated else text
+    except Exception:
+        return text
+
+
 def _dedupe(results, limit=20):
     seen = set()
     out = []
@@ -226,9 +246,14 @@ def execute_tool(tool_name, arguments):
 
     if tool_name == "search_patents_global":
         keywords = arguments.get("keywords", "")
-        keywords_en = arguments.get("keywords_en", keywords)
+        keywords_en = arguments.get("keywords_en", "")
         country = arguments.get("country")
         n = arguments.get("max_results", 10)
+
+        # Always ensure we have proper English keywords for Google Patents
+        if not keywords_en or not keywords_en.isascii():
+            keywords_en = _translate_to_english(keywords)
+            print(f"  [Translate] '{keywords}' -> '{keywords_en}'")
 
         all_results = []
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -315,6 +340,25 @@ IMPORTANT: If the tool result contains a `pdf_local_url` field, use that exact U
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
+
+
+@app.route("/static/pdfs/<filename>")
+def serve_patent_pdf(filename):
+    """Serve patent PDF, downloading on-demand if not yet available."""
+    pdf_dir = os.path.join(os.path.dirname(__file__), "static", "pdfs")
+    local_path = os.path.join(pdf_dir, filename)
+
+    # If already exists, serve it
+    if os.path.exists(local_path) and os.path.getsize(local_path) > 1000:
+        return send_from_directory(pdf_dir, filename, mimetype="application/pdf")
+
+    # Extract patent number from filename (remove .pdf extension)
+    patent_number = filename.replace(".pdf", "")
+    pdf_local = _download_patent_pdf(patent_number)
+    if pdf_local and os.path.exists(local_path) and os.path.getsize(local_path) > 1000:
+        return send_from_directory(pdf_dir, filename, mimetype="application/pdf")
+
+    return {"error": f"PDF not available for {patent_number}"}, 404
 
 
 @app.route("/api/patent-pdf/<patent_number>")
